@@ -34,9 +34,9 @@ class TargetFunc:
 
 def patch_parser(repo_path: str, commit_id: str) -> list[PatchFunc]:
     patch = Commit(repo_path, commit_id)
-
+    patchFunctions: list[PatchFunc] = []
     for blob in patch.blobs:
-        if blob.change_type != "C":
+        if blob.change_type != "C" or "test/" in blob.a_path:
             continue
         a_package = Package(None, blob.a_blob_content)
         b_package = Package(None, blob.b_blob_content)
@@ -71,10 +71,10 @@ def patch_parser(repo_path: str, commit_id: str) -> list[PatchFunc]:
                     if func.a_start_line <= line <= func.a_end_line:
                         func.delline.add(code.strip().replace(" ", ""))
 
-    patchFunctions: list[PatchFunc] = []
-    for func in tmpPatchFunctions:
-        if len(func.addline) != 0 or len(func.delline) != 0:
-            patchFunctions.append(func)
+        for func in tmpPatchFunctions:
+            if len(func.addline) != 0 or len(func.delline) != 0:
+                patchFunctions.append(func)
+
     return patchFunctions
 
 
@@ -145,7 +145,7 @@ if __name__ == '__main__':
     parser.add_argument("-r", "--repo", dest="repo", help="path to the repo", type=str,
                         default="/Users/sunbk201/Desktop/Patch/repo_clone/cache/apache__fdse__tomcat")
     parser.add_argument("-c", "--commit", dest="commit", help="commit to patch", type=str,
-                        default="299b26af66793438c323ea6b18462fa44683080f")
+                        default="b7e0435d17aba69f16ae9e8a78ad0f1565b552af")
     parser.add_argument("-l", "--log", dest="logpath", help="log file path", type=str,
                         default="patch.log")
     parser.add_argument("--loglevel", dest="loglevel", help="log level", type=int,
