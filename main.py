@@ -1,10 +1,10 @@
 import argparse
 import logging
 from commit import Commit
-from meta import Package, Class, Method
+from meta import Package, Method
 from git import Repo
-from util import parser
 import definitions
+import json
 
 class PatchFunc:
     def __init__(self, signature: str, path: str,
@@ -156,15 +156,17 @@ def vulVerCal(repo_path: str, patchFunctions: list[PatchFunc]) -> list[str]:
                 or (totalNum <= 3 and vulNum / totalNum == 1.0)):
             vultag.append(tag.name)
             print(f"tag: {tag}, totalFunNum: {totalNum}, vulFuncNum: {vulNum}")
+        else:
+            pass
+            # print(f"tag: {tag}, totalFunNum: {totalNum}, vulFuncNum: {vulNum}, safe")
     return vultag
 
-
-if __name__ == '__main__':
+def cli():
     parser = argparse.ArgumentParser()
     parser.add_argument("-r", "--repo", dest="repo", help="path to the repo", type=str,
-                        default="/Users/sunbk201/Desktop/Patch/repo_clone/cache/apache__fdse__tomcat")
+                        default="/Users/sunbk201/Desktop/Patch/repo_clone/cache/netty__fdse__netty")
     parser.add_argument("-c", "--commit", dest="commit", help="commit to patch", type=str,
-                        default="b7e0435d17aba69f16ae9e8a78ad0f1565b552af")
+                        default="07aa6b5938a8b6ed7a6586e066400e2643897323")
     parser.add_argument("-l", "--log", dest="logpath", help="log file path", type=str,
                         default="patch.log")
     parser.add_argument("--loglevel", dest="loglevel", help="log level", type=int,
@@ -174,3 +176,36 @@ if __name__ == '__main__':
     commit_id = args.commit
     patch_func: list[PatchFunc] = patch_parser(repo_path, commit_id)
     vultag: list[str] = vulVerCal(repo_path, patch_func)
+
+def validateGroundTruth():
+    cve_version = "/Users/sunbk201/Desktop/VulVer/VulnerabilityVersion/1.empirical/cve_analysis.json"
+    meta_info = "/Users/sunbk201/Desktop/VulVer/VulnerabilityVersion/0.groundtruth/cve_metainfo.json"
+    with open(cve_version) as f:
+        version = json.load(f)
+    with open(meta_info) as f:
+        meta = json.load(f)
+    for cve, cve_data in version.items():
+        try:
+            patch_url = meta[cve]
+        except:
+            print(f"{cve} not found patch")
+            continue
+        owner, repo = patch_url.split("/")[3:5]
+        print(f"{cve} {owner} {repo}")
+        repo_path = f"/Users/sunbk201/Desktop/Patch/repo_clone/cache/{owner}__fdse__{repo}"
+        commit_id = patch_url.split("/")[-1]
+        try:
+            patch_func: list[PatchFunc] = patch_parser(repo_path, commit_id)
+            vultag: list[str] = vulVerCal(repo_path, patch_func)
+            version[cve]["verjava"] = vultag
+        except:
+            print(f"{cve} error")
+            continue
+    cve_version_valid = "/Users/sunbk201/Desktop/VulVer/VulnerabilityVersion/1.empirical/cve_analysis_valid.json"
+    with open(cve_version_valid, "w") as f:
+        json.dump(version, f, indent=4, ensure_ascii=False)
+
+
+if __name__ == '__main__':
+    # cli()
+    validateGroundTruth()

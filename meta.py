@@ -44,6 +44,11 @@ class Method:
             self.name + "(" + ",".join(parameters_type_list) + ")"
 
         body = method_declaration.child_by_field_name("body")
+        if body == None:
+            self.body_source_code: str = ""
+            self.body_start_line: int = 0
+            self.body_end_line: int = 0
+            return
         self.body_source_code: str = body.text.decode()
         self.body_start_line: int = body.start_point[0] + 1
         self.body_end_line: int = body.end_point[0] + 1
