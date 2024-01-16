@@ -1,9 +1,9 @@
 import argparse
 import logging
 from commit import Commit
-from meta import Package, Method
+from meta import Package, Class, Method
 from git import Repo
-from meta import parser
+from util import parser
 import definitions
 
 class PatchFunc:
@@ -19,27 +19,36 @@ class PatchFunc:
         self.delline = set()
 
 class TargetFunc:
-    def __init__(self, method: Method):
-        self.method = method
-        self.start_line, self.end_line = method.line_range
+    def __init__(self, signature: str, source_code: str, start_line: int, end_line: int):
+        self.signature = signature
         self.line = set()
         self.safe = True
 
-        source_code_lines = method.clazz.package.source_code.split("\n")
-        for i in range(self.start_line + 1, self.end_line):
-            if source_code_lines[i].strip() == "":
+        source_code_lines = source_code.split("\n")
+        for line in source_code_lines:
+            if not isValidCodeLine(line):
                 continue
-            self.line.add(source_code_lines[i].strip().replace(" ", ""))
+            self.line.add(line.strip().replace(" ", ""))
 
+def isValidCodeLine(code: str) -> bool:
+    code = code.strip()
+    if (code == "" or code.startswith("//") or
+            code.startswith("/*") or code.startswith("*/")):
+        return False
+    return True
 
 def patch_parser(repo_path: str, commit_id: str) -> list[PatchFunc]:
+    """
+    解析 Patch 文件，获取 Patch 中修改过的函数
+    """
     patch = Commit(repo_path, commit_id)
     patchFunctions: list[PatchFunc] = []
     for blob in patch.blobs:
+        # 只考虑修改过的文件，抛弃 testcase
         if blob.change_type != "C" or "test/" in blob.a_path:
             continue
-        a_package = Package(None, blob.a_blob_content)
-        b_package = Package(None, blob.b_blob_content)
+        a_package = Package(blob.a_blob_content)
+        b_package = Package(blob.b_blob_content)
         a_methods: set[Method] = set()
         b_methods: set[Method] = set()
         for clazz in a_package.classes:
@@ -49,95 +58,105 @@ def patch_parser(repo_path: str, commit_id: str) -> list[PatchFunc]:
             for method in clazz.methods:
                 b_methods.add(method)
 
-        tmpPatchFunctions: list[PatchFunc] = []
+        # 获取 Patch 中修改过的函数
+        matchPatchFunctions: list[PatchFunc] = []
         for am in a_methods:
             for bm in b_methods:
                 if am.signature == bm.signature:
-                    tmpPatchFunctions.append(PatchFunc(am.signature, blob.b_path,
-                                             am.start_line, am.end_line, bm.start_line, bm.end_line))
+                    matchPatchFunctions.append(PatchFunc(am.signature, blob.b_path,
+                                                         am.start_line, am.end_line, bm.start_line, bm.end_line))
                     break
 
+        # 获取 Patch 中修改过的函数的修改行
         for hunk in blob.hunks:
             for line, code in hunk.added_lines.items():
-                if code.strip() == "" or code.strip().startswith("//"):
+                if not isValidCodeLine(code):
                     continue
-                for func in tmpPatchFunctions:
-                    if func.b_start_line <= line <= func.b_end_line:
-                        func.addline.add(code.strip().replace(" ", ""))
+                for matchfunc in matchPatchFunctions:
+                    if matchfunc.b_start_line <= line <= matchfunc.b_end_line:
+                        matchfunc.addline.add(code.strip().replace(" ", ""))
             for line, code in hunk.deleted_lines.items():
-                if code.strip() == "" or code.strip().startswith("//"):
+                if not isValidCodeLine(code):
                     continue
-                for func in tmpPatchFunctions:
-                    if func.a_start_line <= line <= func.a_end_line:
-                        func.delline.add(code.strip().replace(" ", ""))
+                for matchfunc in matchPatchFunctions:
+                    if matchfunc.a_start_line <= line <= matchfunc.a_end_line:
+                        matchfunc.delline.add(code.strip().replace(" ", ""))
 
-        for func in tmpPatchFunctions:
-            if len(func.addline) != 0 or len(func.delline) != 0:
-                patchFunctions.append(func)
+        for matchfunc in matchPatchFunctions:
+            if len(matchfunc.addline) != 0 or len(matchfunc.delline) != 0:
+                patchFunctions.append(matchfunc)
 
     return patchFunctions
 
+def vulFuncCal(patchFunction: PatchFunc, targetFunction: TargetFunc) -> bool:
+    """
+    计算 Patch 函数对应的目标函数是否存在漏洞
+    """
+    targetFuncLineSet = targetFunction.line
+    delLineSet_n = len(patchFunction.delline)
+    addLineSet_n = len(patchFunction.addline)
+    delSim = 0
+    addSim = 0
+    if delLineSet_n != 0:
+        delSim = len(patchFunction.delline & targetFuncLineSet) / delLineSet_n
+    if addLineSet_n != 0:
+        addSim = len(patchFunction.addline & targetFuncLineSet) / addLineSet_n
+    if delLineSet_n != 0 and addLineSet_n != 0:
+        if delSim >= definitions.tDel and addSim <= definitions.tAdd:
+            targetFunction.safe = False
+    elif addLineSet_n == 0:
+        if delSim >= definitions.tDel:
+            targetFunction.safe = False
+    elif delLineSet_n == 0:
+        if addSim <= definitions.tAdd:
+            targetFunction.safe = False
+    else:
+        targetFunction.safe = True
+    return targetFunction.safe
 
-def target_parser(repo_path: str, patchFunctions: list[PatchFunc]):
+def vulVerCal(repo_path: str, patchFunctions: list[PatchFunc]) -> list[str]:
+    """
+    计算所有存在漏洞的目标版本
+    """
     repo = Repo(repo_path)
+    vultag = []
     for tag in repo.tags:
         targetFunctions: list[TargetFunc] = []
         targe_commit = repo.commit(tag)
 
+        # 获取目标版本中所有在 Patch 中修改过的函数
         for func in patchFunctions:
             try:
                 target_blob = targe_commit.tree[func.file]
             except:
                 continue
-            target_package = Package(None, target_blob.data_stream.read().decode())
+            target_package = Package(target_blob.data_stream.read().decode())
             for clazz in target_package.classes:
                 for method in clazz.methods:
                     if method.signature == func.signature:
-                        targetFunctions.append(TargetFunc(method))
-
-        for patchfunc in patchFunctions:
-            targetFunc = next((tf for tf in targetFunctions if tf.method.signature ==
-                              patchfunc.signature), None)
-            if targetFunc is None:
-                continue
-            targetFuncLineSet = targetFunc.line
-            delLineSet_n = len(patchfunc.delline)
-            addLineSet_n = len(patchfunc.addline)
-            delSim = 0
-            addSim = 0
-            if delLineSet_n != 0:
-                delSim = len(patchfunc.delline & targetFuncLineSet) / delLineSet_n
-            if addLineSet_n != 0:
-                addSim = len(patchfunc.addline & targetFuncLineSet) / addLineSet_n
-            if delLineSet_n != 0 and addLineSet_n != 0:
-                if delSim >= definitions.tDel and addSim <= definitions.tAdd:
-                    targetFunc.safe = False
-                    # print(f"tag: {tag}, delSim: {delSim}, addSim: {addSim}, safe: {targetFunc.safe}")
-            elif addLineSet_n == 0:
-                if delSim >= definitions.tDel:
-                    targetFunc.safe = False
-                    # print(f"tag: {tag}, delSim: {delSim}, addSim: {addSim}, safe: {targetFunc.safe}")
-            elif delLineSet_n == 0:
-                if addSim <= definitions.tAdd:
-                    targetFunc.safe = False
-                    # print(f"tag: {tag}, delSim: {delSim}, addSim: {addSim}, safe: {targetFunc.safe}")
-            else:
-                # print(f"tag: {tag}")
-                targetFunc.safe = True
+                        targetFunctions.append(TargetFunc(
+                            method.signature, method.body_source_code, method.start_line, method.end_line))
 
         totalNum = len(patchFunctions)
-        vulNum = sum(1 for func in targetFunctions if not func.safe)
+        # 计算每一个 Patch 函数对应的目标函数是否存在漏洞
         for patchfunc in patchFunctions:
-            targetFunc = next((tf for tf in targetFunctions if tf.method.signature ==
+            targetFunc = next((tf for tf in targetFunctions if tf.signature ==
                               patchfunc.signature), None)
             if targetFunc is None:
                 totalNum -= 1
+                continue
+            vulFuncCal(patchfunc, targetFunc)
 
         if totalNum == 0:
             continue
-        # print(f"tag: {tag}, totalNum: {totalNum}, vulNum: {vulNum}")
-        if (totalNum > 3 and vulNum / totalNum >= definitions.T) or (totalNum <= 3 and vulNum / totalNum == 1.0):
-            print(f"tag: {tag}, totalNum: {totalNum}, vulNum: {vulNum}")
+
+        # 计算目标版本中是否存在漏洞
+        vulNum = sum(1 for func in targetFunctions if not func.safe)
+        if ((totalNum > 3 and vulNum / totalNum >= definitions.T)
+                or (totalNum <= 3 and vulNum / totalNum == 1.0)):
+            vultag.append(tag.name)
+            print(f"tag: {tag}, totalFunNum: {totalNum}, vulFuncNum: {vulNum}")
+    return vultag
 
 
 if __name__ == '__main__':
@@ -153,5 +172,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
     repo_path = args.repo
     commit_id = args.commit
-    patch_func = patch_parser(repo_path, commit_id)
-    target_parser(repo_path, patch_func)
+    patch_func: list[PatchFunc] = patch_parser(repo_path, commit_id)
+    vultag: list[str] = vulVerCal(repo_path, patch_func)

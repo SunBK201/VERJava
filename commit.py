@@ -9,7 +9,11 @@ class Commit:
         self.commit_id = commit_id
         self.commit: GitCommit = self.repo.commit(self.commit_id)
         self.diff = self.commit.parents[0].diff(self.commit, create_patch=True)
-        self.blobs: list[Blob] = [blob for blob in map(Blob, self.diff)]
+        self.blobs: list[Blob] = [
+            Blob(blob) for blob in self.diff
+            if (blob.a_path is not None and blob.b_path.endswith(".java")) or
+            (blob.b_path is not None and blob.b_path.endswith(".java"))
+        ]
 
 class Hunk:
     def __init__(self, hunk_content: str):
@@ -32,12 +36,6 @@ class Hunk:
             self.b_num_lines = int(lineinfo[3])
 
         hunk_content_lines = self.hunk_content.split("\n")
-        context_line_n = 3
-        for i, line in enumerate(hunk_content_lines):
-            if line.startswith("-") or line.startswith("+"):
-                context_line_n = i
-                break
-
         index = 0
         for i, line in enumerate(hunk_content_lines):
             if line.startswith("-"):
@@ -51,13 +49,29 @@ class Hunk:
             if not line.startswith("-"):
                 index += 1
 
+    @staticmethod
+    def parse_hunks(diff: str):
+        hunks_content: list[str] = []
+        iter = re.finditer(r"@@.*?@@", diff)
+        indices = [m.start(0) for m in iter]
+        for i, v in enumerate(indices):
+            if i == len(indices) - 1:
+                hunks_content.append(diff[v:])
+            else:
+                hunks_content.append(diff[v:indices[i + 1]])
+        hunks: list[Hunk] = []
+        for hc in hunks_content:
+            hunk = Hunk(hc)
+            hunks.append(hunk)
+        return hunks
+
 class Blob:
     def __init__(self, blob: Diff):
         self.a_path = blob.a_path
         self.b_path = blob.b_path
         self.change_type = blob.change_type
-        self.a_blob_content: str = None
-        self.b_blob_content: str = None
+        self.a_blob_content: str = blob.a_blob.data_stream.read().decode("utf-8") if self.a_path is not None else None
+        self.b_blob_content: str = blob.b_blob.data_stream.read().decode("utf-8") if self.b_path is not None else None
         self.hunks: list[Hunk] = []
 
         # only .java files
@@ -77,25 +91,5 @@ class Blob:
         else:
             self.change_type = "U"
 
-        if self.a_path is not None:
-            self.a_blob_content = blob.a_blob.data_stream.read().decode("utf-8")
-        if self.b_path is not None:
-            self.b_blob_content = blob.b_blob.data_stream.read().decode("utf-8")
-
         if self.change_type == "M" or self.change_type == "C":
-            self.hunks = self.parse_hunks(blob.diff.decode("utf-8"))
-
-    def parse_hunks(self, diff: str) -> list[Hunk]:
-        hunks_content: list[str] = []
-        iter = re.finditer(r"@@.*?@@", diff)
-        indices = [m.start(0) for m in iter]
-        for i, v in enumerate(indices):
-            if i == len(indices) - 1:
-                hunks_content.append(diff[v:])
-            else:
-                hunks_content.append(diff[v:indices[i + 1]])
-        hunks: list[Hunk] = []
-        for hc in hunks_content:
-            hunk = Hunk(hc)
-            hunks.append(hunk)
-        return hunks
+            self.hunks = Hunk.parse_hunks(blob.diff.decode("utf-8"))
