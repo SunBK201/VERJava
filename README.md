@@ -16,7 +16,7 @@ from verjava import verjava
 # results will be a list of vulnerability repo tags
 vul_tags: list[str] = verjava(
     repo_path="/path/to/your/repo",
-    commit_id="your_commit_id",
+    commit_id="your_commit_id", # Patch Commit
 )
 ```
 
