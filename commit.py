@@ -31,12 +31,15 @@ class Hunk:
         self.added_lines: dict[int, str] = {}
         self.deleted_lines: dict[int, str] = {}
 
-        lineinfo = re.match(r"@@ -(\d+),(\d+) \+(\d+),(\d+) @@", hunk_content).groups()
-        for num in lineinfo:
+        match = re.match(r"@@ -(\d+),(\d+) \+(\d+),(\d+) @@", hunk_content)
+        if match:
+            lineinfo = match.groups()
             self.a_start_line = int(lineinfo[0])
             self.a_num_lines = int(lineinfo[1])
             self.b_start_line = int(lineinfo[2])
             self.b_num_lines = int(lineinfo[3])
+        else:
+            raise ValueError(f"Invalid hunk header: {hunk_content}")
 
         hunk_content_lines = self.hunk_content.split("\n")
         index = 0
@@ -74,14 +77,14 @@ class Blob:
         self.a_path = blob.a_path
         self.b_path = blob.b_path
         self.change_type = blob.change_type
-        self.a_blob_content: str = (
+        self.a_blob_content: str | None = (
             blob.a_blob.data_stream.read().decode("utf-8")
-            if self.a_path is not None
+            if self.a_path is not None and blob.a_blob is not None
             else None
         )
-        self.b_blob_content: str = (
+        self.b_blob_content: str | None = (
             blob.b_blob.data_stream.read().decode("utf-8")
-            if self.b_path is not None
+            if self.b_path is not None and blob.b_blob is not None
             else None
         )
         self.hunks: list[Hunk] = []
@@ -112,4 +115,9 @@ class Blob:
             self.change_type = "U"
 
         if self.change_type == "M" or self.change_type == "C":
-            self.hunks = Hunk.parse_hunks(blob.diff.decode("utf-8"))
+            if blob.diff is None:
+                raise ValueError("Diff content is None")
+            if isinstance(blob.diff, bytes):
+                self.hunks = Hunk.parse_hunks(blob.diff.decode("utf-8"))
+            elif isinstance(blob.diff, str):
+                self.hunks = Hunk.parse_hunks(blob.diff)

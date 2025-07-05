@@ -1,5 +1,4 @@
 import argparse
-import json
 import logging
 
 from git import Repo
@@ -14,10 +13,10 @@ class PatchFunc:
         self,
         signature: str,
         path: str,
-        a_start_line,
-        a_end_line,
-        b_start_line,
-        b_end_line,
+        a_start_line: int,
+        a_end_line: int,
+        b_start_line: int,
+        b_end_line: int,
     ):
         self.signature = signature
         self.file = path
@@ -58,16 +57,22 @@ def isValidCodeLine(code: str) -> bool:
 
 def patch_parser(repo_path: str, commit_id: str) -> list[PatchFunc]:
     """
-    解析 Patch 文件，获取 Patch 中修改过的函数
+    Parse the patch file and get the functions modified in the patch
     """
     patch = Commit(repo_path, commit_id)
     patchFunctions: list[PatchFunc] = []
     for blob in patch.blobs:
-        # 只考虑修改过的文件，抛弃 testcase
-        if blob.change_type != "C" or "test/" in blob.a_path:
+        # Only consider modified files, discard testcases
+        if blob.change_type != "C" or (
+            blob.a_path is not None and "test/" in blob.a_path
+        ):
             continue
-        a_package = Package(blob.a_blob_content)
-        b_package = Package(blob.b_blob_content)
+        a_package = Package(
+            blob.a_blob_content if blob.a_blob_content is not None else ""
+        )
+        b_package = Package(
+            blob.b_blob_content if blob.b_blob_content is not None else ""
+        )
         a_methods: set[Method] = set()
         b_methods: set[Method] = set()
         for clazz in a_package.classes:
@@ -82,6 +87,8 @@ def patch_parser(repo_path: str, commit_id: str) -> list[PatchFunc]:
         for am in a_methods:
             for bm in b_methods:
                 if am.signature == bm.signature:
+                    if blob.b_path is None:
+                        continue
                     matchPatchFunctions.append(
                         PatchFunc(
                             am.signature,
@@ -151,13 +158,13 @@ def vulVerCal(repo_path: str, patchFunctions: list[PatchFunc]) -> list[str]:
     vultag = []
     for tag in repo.tags:
         targetFunctions: list[TargetFunc] = []
-        targe_commit = repo.commit(tag)
+        targe_commit = repo.commit(tag.name)
 
         # 获取目标版本中所有在 Patch 中修改过的函数
         for func in patchFunctions:
             try:
                 target_blob = targe_commit.tree[func.file]
-            except:
+            except Exception:
                 continue
             target_package = Package(target_blob.data_stream.read().decode())
             for clazz in target_package.classes:
@@ -234,39 +241,8 @@ def cli():
     commit_id = args.commit
     patch_func: list[PatchFunc] = patch_parser(repo_path, commit_id)
     vultag: list[str] = vulVerCal(repo_path, patch_func)
-
-
-def validateGroundTruth():
-    cve_version = "/Users/sunbk201/Desktop/VulVer/VulnerabilityVersion/1.empirical/cve_analysis.json"
-    meta_info = "/Users/sunbk201/Desktop/VulVer/VulnerabilityVersion/0.groundtruth/cve_metainfo.json"
-    with open(cve_version) as f:
-        version = json.load(f)
-    with open(meta_info) as f:
-        meta = json.load(f)
-    for cve, cve_data in version.items():
-        try:
-            patch_url = meta[cve]
-        except:
-            print(f"{cve} not found patch")
-            continue
-        owner, repo = patch_url.split("/")[3:5]
-        print(f"{cve} {owner} {repo}")
-        repo_path = (
-            f"/Users/sunbk201/Desktop/Patch/repo_clone/cache/{owner}__fdse__{repo}"
-        )
-        commit_id = patch_url.split("/")[-1]
-        try:
-            patch_func: list[PatchFunc] = patch_parser(repo_path, commit_id)
-            vultag: list[str] = vulVerCal(repo_path, patch_func)
-            version[cve]["verjava"] = vultag
-        except:
-            print(f"{cve} error")
-            continue
-    cve_version_valid = "/Users/sunbk201/Desktop/VulVer/VulnerabilityVersion/1.empirical/cve_analysis_valid.json"
-    with open(cve_version_valid, "w") as f:
-        json.dump(version, f, indent=4, ensure_ascii=False)
+    print(f"Vulnerable tags: {vultag}")
 
 
 if __name__ == "__main__":
-    # cli()
-    validateGroundTruth()
+    cli()

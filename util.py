@@ -1,16 +1,7 @@
-from tree_sitter import Language, Node, Parser
+from scubatrace import java_parser
+from tree_sitter import Node
 
-Language.build_library(
-    # Store the library in the `build` directory
-    "treesitter/build/languages.so",
-    # Include one or more languages
-    [
-        "treesitter/vendor/tree-sitter-java",
-    ],
-)
-JAVA_LANGUAGE = Language("treesitter/build/languages.so", "java")
-parser = Parser()
-parser.set_language(JAVA_LANGUAGE)
+parser = java_parser
 
 
 def children_by_type_name(node: Node, type: str) -> list[Node]:
@@ -26,3 +17,11 @@ def child_by_type_name(node: Node, type: str) -> Node | None:
         if child.type == type:
             return child
     return None
+
+
+def NODETEXT(node: Node | None) -> str:
+    if node is None:
+        raise ValueError("The node is None.")
+    if node.text is None:
+        raise ValueError("The node does not contain text.")
+    return node.text.decode()
