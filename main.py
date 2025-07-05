@@ -56,7 +56,7 @@ def isValidCodeLine(code: str) -> bool:
     return True
 
 
-def patch_parser(repo_path: str, commit_id: str) -> list[PatchFunc]:
+def parsePatch(repo_path: str, commit_id: str) -> list[PatchFunc]:
     """
     Parse the patch file and get the functions modified in the patch
     """
@@ -208,16 +208,28 @@ def vulVerCal(repo_path: str, patchFunctions: list[PatchFunc]) -> list[str]:
     return vultag
 
 
-def verjava(repo_path: str, commit_id: str) -> list[str]:
+def verjava(
+    repo_path: str,
+    commit_id: str,
+    tDel: float = definitions.tDel,
+    tAdd: float = definitions.tAdd,
+    T: float = definitions.T,
+) -> list[str]:
     """
     Main function to calculate vulnerable versions
 
     :param repo_path: Path to the repository
     :param commit_id: Commit ID to patch
+    :param tDel: Threshold for deleted lines similarity
+    :param tAdd: Threshold for added lines similarity
+    :param T: Threshold for vulnerable function ratio
 
     :return: List of vulnerable versions (tags)
     """
-    patch_func: list[PatchFunc] = patch_parser(repo_path, commit_id)
+    definitions.tDel = tDel
+    definitions.tAdd = tAdd
+    definitions.T = T
+    patch_func: list[PatchFunc] = parsePatch(repo_path, commit_id)
     vultag: list[str] = vulVerCal(repo_path, patch_func)
     return vultag
 
@@ -239,6 +251,30 @@ def cli():
         required=True,
         help="commit to patch",
         type=str,
+    )
+    # tDel: threshold for deleted lines similarity
+    parser.add_argument(
+        "--tDel",
+        dest="tDel",
+        help="threshold for deleted lines similarity",
+        type=float,
+        default=definitions.tDel,
+    )
+    # tAdd: threshold for added lines similarity
+    parser.add_argument(
+        "--tAdd",
+        dest="tAdd",
+        help="threshold for added lines similarity",
+        type=float,
+        default=definitions.tAdd,
+    )
+    # T: threshold for vulnerable function ratio
+    parser.add_argument(
+        "--T",
+        dest="T",
+        help="threshold for vulnerable function ratio",
+        type=float,
+        default=definitions.T,
     )
     # results output mode: stdout or json
     parser.add_argument(
@@ -263,6 +299,9 @@ def cli():
     args = parser.parse_args()
     repo_path = args.repo
     commit_id = args.commit
+    definitions.tDel = args.tDel
+    definitions.tAdd = args.tAdd
+    definitions.T = args.T
     logging.basicConfig(
         filename=args.logpath,
         level=args.loglevel,
