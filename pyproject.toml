@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=43.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "verjava"
+version = "0.0.1"
+dependencies = ["scubatrace==0.6.7", "GitPython>=3.1.43"]
+authors = [{ name = "SunBK201", email = "sunbk201gm@gmail.com" }]
+description = "Replication of VERJava"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+]
+
+[project.urls]
+Homepage = "https://github.com/SunBK201/VERJava"
+Issues = "https://github.com/SunBK201/VERJava/issues"
