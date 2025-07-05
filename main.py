@@ -1,14 +1,24 @@
 import argparse
-import logging
-from commit import Commit
-from meta import Package, Method
-from git import Repo
-import definitions
 import json
+import logging
+
+from git import Repo
+
+import definitions
+from commit import Commit
+from meta import Method, Package
+
 
 class PatchFunc:
-    def __init__(self, signature: str, path: str,
-                 a_start_line, a_end_line, b_start_line, b_end_line):
+    def __init__(
+        self,
+        signature: str,
+        path: str,
+        a_start_line,
+        a_end_line,
+        b_start_line,
+        b_end_line,
+    ):
         self.signature = signature
         self.file = path
         self.a_start_line = a_start_line
@@ -18,8 +28,11 @@ class PatchFunc:
         self.addline = set()
         self.delline = set()
 
+
 class TargetFunc:
-    def __init__(self, signature: str, source_code: str, start_line: int, end_line: int):
+    def __init__(
+        self, signature: str, source_code: str, start_line: int, end_line: int
+    ):
         self.signature = signature
         self.line = set()
         self.safe = True
@@ -30,12 +43,18 @@ class TargetFunc:
                 continue
             self.line.add(line.strip().replace(" ", ""))
 
+
 def isValidCodeLine(code: str) -> bool:
     code = code.strip()
-    if (code == "" or code.startswith("//") or
-            code.startswith("/*") or code.startswith("*/")):
+    if (
+        code == ""
+        or code.startswith("//")
+        or code.startswith("/*")
+        or code.startswith("*/")
+    ):
         return False
     return True
+
 
 def patch_parser(repo_path: str, commit_id: str) -> list[PatchFunc]:
     """
@@ -63,8 +82,16 @@ def patch_parser(repo_path: str, commit_id: str) -> list[PatchFunc]:
         for am in a_methods:
             for bm in b_methods:
                 if am.signature == bm.signature:
-                    matchPatchFunctions.append(PatchFunc(am.signature, blob.b_path,
-                                                         am.start_line, am.end_line, bm.start_line, bm.end_line))
+                    matchPatchFunctions.append(
+                        PatchFunc(
+                            am.signature,
+                            blob.b_path,
+                            am.start_line,
+                            am.end_line,
+                            bm.start_line,
+                            bm.end_line,
+                        )
+                    )
                     break
 
         # 获取 Patch 中修改过的函数的修改行
@@ -87,6 +114,7 @@ def patch_parser(repo_path: str, commit_id: str) -> list[PatchFunc]:
                 patchFunctions.append(matchfunc)
 
     return patchFunctions
+
 
 def vulFuncCal(patchFunction: PatchFunc, targetFunction: TargetFunc) -> bool:
     """
@@ -114,6 +142,7 @@ def vulFuncCal(patchFunction: PatchFunc, targetFunction: TargetFunc) -> bool:
         targetFunction.safe = True
     return targetFunction.safe
 
+
 def vulVerCal(repo_path: str, patchFunctions: list[PatchFunc]) -> list[str]:
     """
     计算所有存在漏洞的目标版本
@@ -134,14 +163,22 @@ def vulVerCal(repo_path: str, patchFunctions: list[PatchFunc]) -> list[str]:
             for clazz in target_package.classes:
                 for method in clazz.methods:
                     if method.signature == func.signature:
-                        targetFunctions.append(TargetFunc(
-                            method.signature, method.body_source_code, method.start_line, method.end_line))
+                        targetFunctions.append(
+                            TargetFunc(
+                                method.signature,
+                                method.body_source_code,
+                                method.start_line,
+                                method.end_line,
+                            )
+                        )
 
         totalNum = len(patchFunctions)
         # 计算每一个 Patch 函数对应的目标函数是否存在漏洞
         for patchfunc in patchFunctions:
-            targetFunc = next((tf for tf in targetFunctions if tf.signature ==
-                              patchfunc.signature), None)
+            targetFunc = next(
+                (tf for tf in targetFunctions if tf.signature == patchfunc.signature),
+                None,
+            )
             if targetFunc is None:
                 totalNum -= 1
                 continue
@@ -152,8 +189,9 @@ def vulVerCal(repo_path: str, patchFunctions: list[PatchFunc]) -> list[str]:
 
         # 计算目标版本中是否存在漏洞
         vulNum = sum(1 for func in targetFunctions if not func.safe)
-        if ((totalNum > 3 and vulNum / totalNum >= definitions.T)
-                or (totalNum <= 3 and vulNum / totalNum == 1.0)):
+        if (totalNum > 3 and vulNum / totalNum >= definitions.T) or (
+            totalNum <= 3 and vulNum / totalNum == 1.0
+        ):
             vultag.append(tag.name)
             print(f"tag: {tag}, totalFunNum: {totalNum}, vulFuncNum: {vulNum}")
         else:
@@ -161,21 +199,42 @@ def vulVerCal(repo_path: str, patchFunctions: list[PatchFunc]) -> list[str]:
             # print(f"tag: {tag}, totalFunNum: {totalNum}, vulFuncNum: {vulNum}, safe")
     return vultag
 
+
 def cli():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-r", "--repo", dest="repo", help="path to the repo", type=str,
-                        default="/Users/sunbk201/Desktop/Patch/repo_clone/cache/netty__fdse__netty")
-    parser.add_argument("-c", "--commit", dest="commit", help="commit to patch", type=str,
-                        default="07aa6b5938a8b6ed7a6586e066400e2643897323")
-    parser.add_argument("-l", "--log", dest="logpath", help="log file path", type=str,
-                        default="patch.log")
-    parser.add_argument("--loglevel", dest="loglevel", help="log level", type=int,
-                        default=logging.INFO)
+    parser.add_argument(
+        "-r",
+        "--repo",
+        dest="repo",
+        help="path to the repo",
+        type=str,
+        default="/Users/sunbk201/Desktop/Patch/repo_clone/cache/netty__fdse__netty",
+    )
+    parser.add_argument(
+        "-c",
+        "--commit",
+        dest="commit",
+        help="commit to patch",
+        type=str,
+        default="07aa6b5938a8b6ed7a6586e066400e2643897323",
+    )
+    parser.add_argument(
+        "-l",
+        "--log",
+        dest="logpath",
+        help="log file path",
+        type=str,
+        default="patch.log",
+    )
+    parser.add_argument(
+        "--loglevel", dest="loglevel", help="log level", type=int, default=logging.INFO
+    )
     args = parser.parse_args()
     repo_path = args.repo
     commit_id = args.commit
     patch_func: list[PatchFunc] = patch_parser(repo_path, commit_id)
     vultag: list[str] = vulVerCal(repo_path, patch_func)
+
 
 def validateGroundTruth():
     cve_version = "/Users/sunbk201/Desktop/VulVer/VulnerabilityVersion/1.empirical/cve_analysis.json"
@@ -192,7 +251,9 @@ def validateGroundTruth():
             continue
         owner, repo = patch_url.split("/")[3:5]
         print(f"{cve} {owner} {repo}")
-        repo_path = f"/Users/sunbk201/Desktop/Patch/repo_clone/cache/{owner}__fdse__{repo}"
+        repo_path = (
+            f"/Users/sunbk201/Desktop/Patch/repo_clone/cache/{owner}__fdse__{repo}"
+        )
         commit_id = patch_url.split("/")[-1]
         try:
             patch_func: list[PatchFunc] = patch_parser(repo_path, commit_id)
@@ -206,6 +267,6 @@ def validateGroundTruth():
         json.dump(version, f, indent=4, ensure_ascii=False)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # cli()
     validateGroundTruth()
