@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import cached_property
 
-from util import NODETEXT, Node, child_by_type_name, children_by_type_name, parser
+from .util import NODETEXT, Node, child_by_type_name, children_by_type_name, parser
 
 
 class Package:

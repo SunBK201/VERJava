@@ -4,9 +4,9 @@ import logging
 
 from git import Repo
 
-import definitions
-from commit import Commit
-from meta import Method, Package
+from . import definitions
+from .commit import Commit
+from .meta import Method, Package
 
 
 class PatchFunc:
