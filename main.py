@@ -1,4 +1,5 @@
 import argparse
+import json
 import logging
 
 from git import Repo
@@ -82,7 +83,7 @@ def patch_parser(repo_path: str, commit_id: str) -> list[PatchFunc]:
             for method in clazz.methods:
                 b_methods.add(method)
 
-        # 获取 Patch 中修改过的函数
+        # Get the functions modified in the Patch
         matchPatchFunctions: list[PatchFunc] = []
         for am in a_methods:
             for bm in b_methods:
@@ -101,7 +102,7 @@ def patch_parser(repo_path: str, commit_id: str) -> list[PatchFunc]:
                     )
                     break
 
-        # 获取 Patch 中修改过的函数的修改行
+        # Get the modified lines of the functions modified in the Patch
         for hunk in blob.hunks:
             for line, code in hunk.added_lines.items():
                 if not isValidCodeLine(code):
@@ -125,7 +126,7 @@ def patch_parser(repo_path: str, commit_id: str) -> list[PatchFunc]:
 
 def vulFuncCal(patchFunction: PatchFunc, targetFunction: TargetFunc) -> bool:
     """
-    计算 Patch 函数对应的目标函数是否存在漏洞
+    Calculate whether the target function corresponding to the Patch function is vulnerable
     """
     targetFuncLineSet = targetFunction.line
     delLineSet_n = len(patchFunction.delline)
@@ -152,7 +153,7 @@ def vulFuncCal(patchFunction: PatchFunc, targetFunction: TargetFunc) -> bool:
 
 def vulVerCal(repo_path: str, patchFunctions: list[PatchFunc]) -> list[str]:
     """
-    计算所有存在漏洞的目标版本
+    Calculate all vulnerable target versions
     """
     repo = Repo(repo_path)
     vultag = []
@@ -160,7 +161,7 @@ def vulVerCal(repo_path: str, patchFunctions: list[PatchFunc]) -> list[str]:
         targetFunctions: list[TargetFunc] = []
         targe_commit = repo.commit(tag.name)
 
-        # 获取目标版本中所有在 Patch 中修改过的函数
+        # Get all functions in the target version that have been modified in the Patch
         for func in patchFunctions:
             try:
                 target_blob = targe_commit.tree[func.file]
@@ -180,7 +181,7 @@ def vulVerCal(repo_path: str, patchFunctions: list[PatchFunc]) -> list[str]:
                         )
 
         totalNum = len(patchFunctions)
-        # 计算每一个 Patch 函数对应的目标函数是否存在漏洞
+        # Calculate whether each target function corresponding to the Patch function is vulnerable
         for patchfunc in patchFunctions:
             targetFunc = next(
                 (tf for tf in targetFunctions if tf.signature == patchfunc.signature),
@@ -194,16 +195,30 @@ def vulVerCal(repo_path: str, patchFunctions: list[PatchFunc]) -> list[str]:
         if totalNum == 0:
             continue
 
-        # 计算目标版本中是否存在漏洞
+        # Calculate whether there are vulnerabilities in the target version
         vulNum = sum(1 for func in targetFunctions if not func.safe)
         if (totalNum > 3 and vulNum / totalNum >= definitions.T) or (
             totalNum <= 3 and vulNum / totalNum == 1.0
         ):
             vultag.append(tag.name)
-            print(f"tag: {tag}, totalFunNum: {totalNum}, vulFuncNum: {vulNum}")
+            logging.debug(f"tag: {tag}, totalFunNum: {totalNum}, vulFuncNum: {vulNum}")
         else:
             pass
-            # print(f"tag: {tag}, totalFunNum: {totalNum}, vulFuncNum: {vulNum}, safe")
+            # logging.debug(f"tag: {tag}, totalFunNum: {totalNum}, vulFuncNum: {vulNum}, safe")
+    return vultag
+
+
+def verjava(repo_path: str, commit_id: str) -> list[str]:
+    """
+    Main function to calculate vulnerable versions
+
+    :param repo_path: Path to the repository
+    :param commit_id: Commit ID to patch
+
+    :return: List of vulnerable versions (tags)
+    """
+    patch_func: list[PatchFunc] = patch_parser(repo_path, commit_id)
+    vultag: list[str] = vulVerCal(repo_path, patch_func)
     return vultag
 
 
@@ -213,17 +228,26 @@ def cli():
         "-r",
         "--repo",
         dest="repo",
+        required=True,
         help="path to the repo",
         type=str,
-        default="/Users/sunbk201/Desktop/Patch/repo_clone/cache/netty__fdse__netty",
     )
     parser.add_argument(
         "-c",
         "--commit",
         dest="commit",
+        required=True,
         help="commit to patch",
         type=str,
-        default="07aa6b5938a8b6ed7a6586e066400e2643897323",
+    )
+    # results output mode: stdout or json
+    parser.add_argument(
+        "-o",
+        "--output",
+        dest="output",
+        help="output mode, stdout or json",
+        type=str,
+        default="stdout",
     )
     parser.add_argument(
         "-l",
@@ -231,17 +255,29 @@ def cli():
         dest="logpath",
         help="log file path",
         type=str,
-        default="patch.log",
+        default="verjava.log",
     )
     parser.add_argument(
-        "--loglevel", dest="loglevel", help="log level", type=int, default=logging.INFO
+        "--loglevel", dest="loglevel", help="log level", type=int, default=logging.DEBUG
     )
     args = parser.parse_args()
     repo_path = args.repo
     commit_id = args.commit
-    patch_func: list[PatchFunc] = patch_parser(repo_path, commit_id)
-    vultag: list[str] = vulVerCal(repo_path, patch_func)
-    print(f"Vulnerable tags: {vultag}")
+    logging.basicConfig(
+        filename=args.logpath,
+        level=args.loglevel,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+    )
+    vultag: list[str] = verjava(repo_path, commit_id)
+    if args.output == "stdout":
+        print("Vulnerable versions (tags):")
+        for tag in vultag:
+            print(tag)
+    elif args.output == "json":
+        with open("verjava_results.json", "w") as f:
+            json.dump(vultag, f, indent=4)
+    else:
+        logging.error("Invalid output mode. Use 'stdout' or 'json'.")
 
 
 if __name__ == "__main__":
