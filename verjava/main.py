@@ -51,6 +51,15 @@ def isValidCodeLine(code: str) -> bool:
         or code.startswith("//")
         or code.startswith("/*")
         or code.startswith("*/")
+        or code == "{"
+        or code == "}"
+        or code == ";"
+        or code == "("
+        or code == ")"
+        or code == "["
+        or code == "]"
+        or code == "/*"
+        or code == "*/"
     ):
         return False
     return True

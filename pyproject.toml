@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "verjava"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = ["scubatrace==0.6.7", "GitPython>=3.1.43"]
 authors = [{ name = "SunBK201", email = "sunbk201gm@gmail.com" }]
 description = "Replication of VERJava"
