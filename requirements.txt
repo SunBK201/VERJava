@@ -1,2 +1,2 @@
 GitPython>=3.1.43
-scubatrace==0.6.7
+scubatrace==0.7.0
